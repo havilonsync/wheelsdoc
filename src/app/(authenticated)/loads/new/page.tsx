@@ -97,6 +97,7 @@ export default function NewLoadPage() {
   const handleExtracted = useCallback(
     (fields: ExtractedDocument, pending: PendingDocument) => {
       setPendingDoc(pending)
+      console.log("[AI fill] Received from Claude:", JSON.stringify(fields, null, 2))
       const keys = new Set<string>()
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -32,7 +32,8 @@ const DOC_TYPES = [
   { value: "INVOICE", label: "Invoice" },
 ]
 
-const ACCEPTED = "image/jpeg,image/png,image/webp,application/pdf"
+// HEIC/HEIF for iPhone photos; converted to JPEG server-side before Claude
+const ACCEPTED = "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,.heic,.heif"
 
 export function DocumentUploader({ onExtracted }: DocumentUploaderProps) {
   const [dragging, setDragging] = useState(false)
@@ -93,6 +94,8 @@ export function DocumentUploader({ onExtracted }: DocumentUploaderProps) {
       if (!res.ok) throw new Error(data.error ?? "Extraction failed")
 
       const fields: ExtractedDocument = data.extractedFields ?? {}
+      console.log("[uploader] ocrStatus:", data.ocrStatus)
+      console.log("[uploader] extractedFields:", JSON.stringify(fields, null, 2))
       const count = countExtractedFields(fields)
       setFieldCount(count)
       setStatus("done")
@@ -139,7 +142,7 @@ export function DocumentUploader({ onExtracted }: DocumentUploaderProps) {
             <p className="text-sm font-medium text-gray-700">
               Drop a document here or click to browse
             </p>
-            <p className="text-xs text-gray-400 mt-1">JPEG · PNG · WebP · PDF &mdash; max 10 MB</p>
+            <p className="text-xs text-gray-400 mt-1">JPEG · PNG · WebP · HEIC · PDF &mdash; max 10 MB</p>
           </div>
           <input
             ref={inputRef}

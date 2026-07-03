@@ -3,13 +3,19 @@ import { auth } from "@/lib/auth"
 import { getUserOrg } from "@/lib/auth"
 import { storeFile } from "@/lib/storage"
 import { extractDocumentFields } from "@/lib/extract"
+import { prepareImage } from "@/lib/image-prep"
 
 const ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/heic",
+  "image/heif",
   "application/pdf",
+  // iOS sometimes sends empty type for HEIC — caught by filename extension below
 ]
+
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif", "pdf"])
 
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
 
@@ -37,9 +43,18 @@ export async function POST(request: NextRequest) {
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 })
   }
-  if (!ALLOWED_TYPES.includes(file.type)) {
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? ""
+  const effectiveMime =
+    file.type && file.type !== "application/octet-stream"
+      ? file.type
+      : ext === "heic" || ext === "heif"
+        ? `image/${ext}`
+        : file.type
+
+  if (!ALLOWED_TYPES.includes(effectiveMime) && !ALLOWED_EXTENSIONS.has(ext)) {
     return NextResponse.json(
-      { error: "Unsupported file type. Use JPEG, PNG, WebP, or PDF." },
+      { error: "Unsupported file type. Use JPEG, PNG, WebP, HEIC, or PDF." },
       { status: 400 }
     )
   }
@@ -50,12 +65,25 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let buffer: Buffer = Buffer.from(await file.arrayBuffer()) as any
+  // Convert HEIC and compress large images before storage + extraction
+  let mimeType = effectiveMime
+  if (effectiveMime !== "application/pdf") {
+    try {
+      const prepared = await prepareImage(buffer, effectiveMime, file.name)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      buffer = prepared.buffer as any
+      mimeType = prepared.mimeType
+    } catch (err) {
+      console.error("[extract] Image prep failed, using original:", err)
+    }
+  }
 
   // Store the file — non-fatal: extraction still runs if storage is misconfigured
   let stored: { url: string; size: number; hash: string } | null = null
   try {
-    stored = await storeFile(buffer, file.type)
+    stored = await storeFile(buffer, mimeType)
   } catch (err) {
     console.error("[extract] File storage failed (continuing with extraction):", err)
   }
@@ -67,7 +95,7 @@ export async function POST(request: NextRequest) {
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       ocrStatus = "PROCESSING"
-      extractedFields = await extractDocumentFields(buffer, file.type)
+      extractedFields = await extractDocumentFields(buffer, mimeType)
       ocrStatus = "COMPLETED"
     } catch (err) {
       console.error("[extract] Claude extraction failed:", err)
@@ -79,8 +107,8 @@ export async function POST(request: NextRequest) {
     success: true,
     ocrStatus,
     fileUrl: stored?.url ?? null,
-    fileSize: stored?.size ?? file.size,
-    mimeType: file.type,
+    fileSize: stored?.size ?? buffer.length,
+    mimeType,
     fileHash: stored?.hash ?? null,
     documentType,
     extractedFields,

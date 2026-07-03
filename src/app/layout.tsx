@@ -10,8 +10,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "HaulPass — Digital Freight Documentation",
-    template: "%s | HaulPass",
+    default: "WheelsDoc — Digital Freight Documentation",
+    template: "%s | WheelsDoc",
   },
   description:
     "The digital freight documentation platform for modern carriers, drivers, and brokers. Load Passport, document capture, reconciliation, and factoring — all in one place.",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     "carrier software",
   ],
   openGraph: {
-    title: "HaulPass — Every Load. Every Document. Every Dollar.",
+    title: "WheelsDoc — Every Load. Every Document. Every Dollar.",
     description:
       "Digital freight documentation for carriers, drivers, and brokers.",
     type: "website",

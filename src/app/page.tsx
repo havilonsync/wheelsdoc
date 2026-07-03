@@ -151,7 +151,7 @@ export default function LandingPage() {
                 />
               </svg>
             </div>
-            <span className="text-lg font-bold text-[#1E3A5F]">HaulPass</span>
+            <span className="text-lg font-bold text-[#1E3A5F]">WheelsDoc</span>
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm text-gray-600">
             <a href="#features" className="hover:text-gray-900 transition">
@@ -194,7 +194,7 @@ export default function LandingPage() {
             <span className="text-[#F59E0B]">Every Dollar.</span>
           </h1>
           <p className="text-xl text-blue-200 mb-10 max-w-2xl mx-auto">
-            HaulPass digitizes the entire freight documentation lifecycle — from
+            WheelsDoc digitizes the entire freight documentation lifecycle — from
             rate confirmation to factoring packet — so carriers stop losing money
             to missing docs and disputed invoices.
           </p>
@@ -226,7 +226,7 @@ export default function LandingPage() {
             </h2>
             <p className="text-gray-500 max-w-xl mx-auto">
               From the moment a load is dispatched to the day it&apos;s paid —
-              HaulPass captures, organizes, and verifies every document
+              WheelsDoc captures, organizes, and verifies every document
               automatically.
             </p>
           </div>
@@ -405,7 +405,7 @@ export default function LandingPage() {
                   />
                 </svg>
               </div>
-              <span className="text-sm font-bold text-[#1E3A5F]">HaulPass</span>
+              <span className="text-sm font-bold text-[#1E3A5F]">WheelsDoc</span>
             </div>
             <p className="text-xs text-gray-400 max-w-xs">
               The digital freight documentation platform for modern carriers,
@@ -472,7 +472,7 @@ export default function LandingPage() {
         </div>
         <div className="max-w-6xl mx-auto mt-8 pt-8 border-t border-gray-100">
           <p className="text-xs text-gray-400">
-            © {new Date().getFullYear()} HaulPass. All rights reserved.
+            © {new Date().getFullYear()} WheelsDoc. All rights reserved.
           </p>
         </div>
       </footer>

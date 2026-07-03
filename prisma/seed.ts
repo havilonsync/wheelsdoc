@@ -8,7 +8,7 @@ const adapter = new PrismaPg({ connectionString })
 const prisma = new PrismaClient({ adapter })
 
 async function main() {
-  console.log("Seeding HaulPass database...")
+  console.log("Seeding WheelsDoc database...")
 
   // Hash each password individually per spec
   const [
@@ -30,12 +30,12 @@ async function main() {
 
   // ── Organizations ──────────────────────────────────────────────────────────
 
-  const haulpassPlatform = await prisma.organization.upsert({
-    where: { slug: "haulpass-platform" },
+  const wheelsdocPlatform = await prisma.organization.upsert({
+    where: { slug: "wheelsdoc-platform" },
     update: {},
     create: {
-      name: "HaulPass Platform",
-      slug: "haulpass-platform",
+      name: "WheelsDoc Platform",
+      slug: "wheelsdoc-platform",
       orgType: "LOGISTICS",
       plan: "ENTERPRISE",
     },
@@ -126,70 +126,70 @@ async function main() {
   // ── Users ──────────────────────────────────────────────────────────────────
 
   const adminUser = await prisma.user.upsert({
-    where: { email: "admin@haulpass.dev" },
+    where: { email: "admin@wheelsdoc.dev" },
     update: {},
-    create: { name: "Platform Admin", email: "admin@haulpass.dev", hashedPassword: adminPw },
+    create: { name: "Platform Admin", email: "admin@wheelsdoc.dev", hashedPassword: adminPw },
   })
 
   const carrierAdmin = await prisma.user.upsert({
-    where: { email: "carrier@haulpass.dev" },
+    where: { email: "carrier@wheelsdoc.dev" },
     update: {},
-    create: { name: "Alex Carrier", email: "carrier@haulpass.dev", hashedPassword: carrierPw, phone: "555-301-0001" },
+    create: { name: "Alex Carrier", email: "carrier@wheelsdoc.dev", hashedPassword: carrierPw, phone: "555-301-0001" },
   })
 
   const dispatcher = await prisma.user.upsert({
-    where: { email: "dispatch@haulpass.dev" },
+    where: { email: "dispatch@wheelsdoc.dev" },
     update: {},
-    create: { name: "Sam Dispatcher", email: "dispatch@haulpass.dev", hashedPassword: dispatchPw, phone: "555-301-0002" },
+    create: { name: "Sam Dispatcher", email: "dispatch@wheelsdoc.dev", hashedPassword: dispatchPw, phone: "555-301-0002" },
   })
 
   const driver = await prisma.user.upsert({
-    where: { email: "driver@haulpass.dev" },
+    where: { email: "driver@wheelsdoc.dev" },
     update: {},
-    create: { name: "Mike Driver", email: "driver@haulpass.dev", hashedPassword: driverPw, phone: "555-301-0003" },
+    create: { name: "Mike Driver", email: "driver@wheelsdoc.dev", hashedPassword: driverPw, phone: "555-301-0003" },
   })
 
   const shipperUser = await prisma.user.upsert({
-    where: { email: "shipper@haulpass.dev" },
+    where: { email: "shipper@wheelsdoc.dev" },
     update: {},
-    create: { name: "Jennifer Shipper", email: "shipper@haulpass.dev", hashedPassword: shipperPw, phone: "555-302-0001" },
+    create: { name: "Jennifer Shipper", email: "shipper@wheelsdoc.dev", hashedPassword: shipperPw, phone: "555-302-0001" },
   })
 
   const receiverUser = await prisma.user.upsert({
-    where: { email: "receiver@haulpass.dev" },
+    where: { email: "receiver@wheelsdoc.dev" },
     update: {},
-    create: { name: "Bob Receiver", email: "receiver@haulpass.dev", hashedPassword: receiverPw, phone: "555-304-0001" },
+    create: { name: "Bob Receiver", email: "receiver@wheelsdoc.dev", hashedPassword: receiverPw, phone: "555-304-0001" },
   })
 
   const brokerUser = await prisma.user.upsert({
-    where: { email: "broker@haulpass.dev" },
+    where: { email: "broker@wheelsdoc.dev" },
     update: {},
-    create: { name: "Carol Broker", email: "broker@haulpass.dev", hashedPassword: brokerPw, phone: "555-303-0001" },
+    create: { name: "Carol Broker", email: "broker@wheelsdoc.dev", hashedPassword: brokerPw, phone: "555-303-0001" },
   })
 
   const factoringUser = await prisma.user.upsert({
-    where: { email: "factoring@haulpass.dev" },
+    where: { email: "factoring@wheelsdoc.dev" },
     update: {},
-    create: { name: "Dave Factor", email: "factoring@haulpass.dev", hashedPassword: factoringPw },
+    create: { name: "Dave Factor", email: "factoring@wheelsdoc.dev", hashedPassword: factoringPw },
   })
 
   const accountant = await prisma.user.upsert({
-    where: { email: "accounting@haulpass.dev" },
+    where: { email: "accounting@wheelsdoc.dev" },
     update: {},
-    create: { name: "Lynn Accountant", email: "accounting@haulpass.dev", hashedPassword: accountingPw },
+    create: { name: "Lynn Accountant", email: "accounting@wheelsdoc.dev", hashedPassword: accountingPw },
   })
 
   const auditor = await prisma.user.upsert({
-    where: { email: "auditor@haulpass.dev" },
+    where: { email: "auditor@wheelsdoc.dev" },
     update: {},
-    create: { name: "Tom Auditor", email: "auditor@haulpass.dev", hashedPassword: auditorPw },
+    create: { name: "Tom Auditor", email: "auditor@wheelsdoc.dev", hashedPassword: auditorPw },
   })
 
   // ── Memberships ────────────────────────────────────────────────────────────
 
   const memberships = [
-    { userId: adminUser.id, orgId: haulpassPlatform.id, role: "PLATFORM_ADMIN" as const },
-    { userId: auditor.id, orgId: haulpassPlatform.id, role: "AUDITOR" as const },
+    { userId: adminUser.id, orgId: wheelsdocPlatform.id, role: "PLATFORM_ADMIN" as const },
+    { userId: auditor.id, orgId: wheelsdocPlatform.id, role: "AUDITOR" as const },
     { userId: carrierAdmin.id, orgId: swiftEagle.id, role: "CARRIER_ADMIN" as const },
     { userId: dispatcher.id, orgId: swiftEagle.id, role: "DISPATCHER" as const },
     { userId: driver.id, orgId: swiftEagle.id, role: "DRIVER" as const },
@@ -471,16 +471,16 @@ async function main() {
   console.log("\n✅ Seed complete!\n")
   console.log("Test credentials:")
   console.log("─────────────────────────────────────────────────────────")
-  console.log("  admin@haulpass.dev        Admin123!     Platform Admin")
-  console.log("  carrier@haulpass.dev      Carrier123!   Carrier Admin")
-  console.log("  dispatch@haulpass.dev     Dispatch123!  Dispatcher")
-  console.log("  driver@haulpass.dev       Driver123!    Driver")
-  console.log("  shipper@haulpass.dev      Shipper123!   Shipper")
-  console.log("  receiver@haulpass.dev     Receiver123!  Receiver")
-  console.log("  broker@haulpass.dev       Broker123!    Broker")
-  console.log("  factoring@haulpass.dev    Factor123!    Factoring Co")
-  console.log("  accounting@haulpass.dev   Acct123!      Accountant")
-  console.log("  auditor@haulpass.dev      Audit123!     Auditor")
+  console.log("  admin@wheelsdoc.dev        Admin123!     Platform Admin")
+  console.log("  carrier@wheelsdoc.dev      Carrier123!   Carrier Admin")
+  console.log("  dispatch@wheelsdoc.dev     Dispatch123!  Dispatcher")
+  console.log("  driver@wheelsdoc.dev       Driver123!    Driver")
+  console.log("  shipper@wheelsdoc.dev      Shipper123!   Shipper")
+  console.log("  receiver@wheelsdoc.dev     Receiver123!  Receiver")
+  console.log("  broker@wheelsdoc.dev       Broker123!    Broker")
+  console.log("  factoring@wheelsdoc.dev    Factor123!    Factoring Co")
+  console.log("  accounting@wheelsdoc.dev   Acct123!      Accountant")
+  console.log("  auditor@wheelsdoc.dev      Audit123!     Auditor")
   console.log("─────────────────────────────────────────────────────────\n")
 }
 

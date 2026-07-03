@@ -30,7 +30,7 @@ export function Topbar({ userName, userEmail, userAvatar }: TopbarProps) {
 
   const pageTitle =
     Object.entries(PAGE_TITLES).find(([key]) => pathname.startsWith(key))?.[1] ??
-    "HaulPass"
+    "WheelsDoc"
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {

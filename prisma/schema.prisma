@@ -1,4 +1,4 @@
-// HaulPass — Digital Freight Documentation Platform
+// WheelsDoc — Digital Freight Documentation Platform
 // Prisma 7 Schema
 
 generator client {

@@ -15,7 +15,7 @@ export default function LoginPage() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-[#1E3A5F] mb-2">Welcome back</h1>
-      <p className="text-gray-500 text-sm mb-6">Sign in to your HaulPass account</p>
+      <p className="text-gray-500 text-sm mb-6">Sign in to your WheelsDoc account</p>
 
       {state?.error && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">

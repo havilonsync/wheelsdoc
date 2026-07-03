@@ -147,7 +147,7 @@ export function Sidebar({ role }: SidebarProps) {
               />
             </svg>
           </div>
-          <span className="text-lg font-bold text-[#1E3A5F]">HaulPass</span>
+          <span className="text-lg font-bold text-[#1E3A5F]">WheelsDoc</span>
         </div>
         {navContent}
       </aside>

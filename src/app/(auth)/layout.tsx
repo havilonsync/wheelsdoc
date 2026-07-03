@@ -23,7 +23,7 @@ export default function AuthLayout({
                 />
               </svg>
             </div>
-            <span className="text-2xl font-bold text-[#1E3A5F]">HaulPass</span>
+            <span className="text-2xl font-bold text-[#1E3A5F]">WheelsDoc</span>
           </div>
           <p className="text-sm text-gray-500 mt-1">
             Digital Freight Documentation Platform

@@ -1,18 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
+import { cn } from "@/lib/utils"
 import { CreateLoadSchema } from "@/lib/validators"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { DocumentUploader, type PendingDocument } from "@/components/documents/document-uploader"
 import { Plus, Trash2 } from "lucide-react"
+import type { ExtractedDocument } from "@/lib/extract"
 
-// Use z.input for form values — allows undefined for optional/default fields
 type CreateLoadFormValues = z.input<typeof CreateLoadSchema>
 
 const RATE_TYPES = [
@@ -39,14 +41,40 @@ const US_STATES = [
   "VA","WA","WV","WI","WY",
 ].map((s) => ({ value: s, label: s }))
 
+// Wraps a form field with an amber highlight + "AI" badge when auto-filled by extraction
+function AiField({
+  name,
+  extracted,
+  children,
+}: {
+  name: string
+  extracted: Set<string>
+  children: React.ReactNode
+}) {
+  const active = extracted.has(name)
+  return (
+    <div className={cn("relative", active && "rounded-lg ring-2 ring-amber-400 ring-offset-1")}>
+      {children}
+      {active && (
+        <span className="absolute -top-2.5 right-1.5 z-10 bg-amber-400 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-tight shadow-sm">
+          AI
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function NewLoadPage() {
   const router = useRouter()
   const [serverError, setServerError] = useState<string | null>(null)
+  const [extracted, setExtracted] = useState<Set<string>>(new Set())
+  const [pendingDoc, setPendingDoc] = useState<PendingDocument | null>(null)
 
   const {
     register,
     control,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CreateLoadFormValues>({
     resolver: zodResolver(CreateLoadSchema),
@@ -58,46 +86,113 @@ export default function NewLoadPage() {
       hazmatFlag: false,
       tempRequired: false,
       stops: [
-        {
-          stopType: "PICKUP",
-          stopNumber: 1,
-          name: "",
-          address: "",
-          city: "",
-          state: "",
-          zip: "",
-          weightUnit: "lbs",
-        },
-        {
-          stopType: "DELIVERY",
-          stopNumber: 1,
-          name: "",
-          address: "",
-          city: "",
-          state: "",
-          zip: "",
-          weightUnit: "lbs",
-        },
+        { stopType: "PICKUP",    stopNumber: 1, name: "", address: "", city: "", state: "", zip: "", weightUnit: "lbs" },
+        { stopType: "DELIVERY",  stopNumber: 1, name: "", address: "", city: "", state: "", zip: "", weightUnit: "lbs" },
       ],
     },
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: "stops" })
 
+  const handleExtracted = useCallback(
+    (fields: ExtractedDocument, pending: PendingDocument) => {
+      setPendingDoc(pending)
+      const keys = new Set<string>()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const set = (key: string, val: any) => {
+        if (val !== null && val !== undefined && val !== "") {
+          setValue(key as Parameters<typeof setValue>[0], val)
+          keys.add(key)
+        }
+      }
+
+      set("bolNumber", fields.bolNumber)
+      set("poNumber", fields.poNumber)
+      set("rateConfNumber", fields.rateConfNumber)
+      set("agreedRate", fields.rate)
+      if (fields.rateType) set("rateType", fields.rateType)
+
+      // Shipper party
+      set("shipperName",    fields.shipper?.name)
+      set("shipperAddress", fields.shipper?.address)
+      set("shipperCity",    fields.shipper?.city)
+      set("shipperState",   fields.shipper?.state)
+      set("shipperZip",     fields.shipper?.zip)
+
+      // Consignee party
+      set("consigneeName",    fields.consignee?.name)
+      set("consigneeAddress", fields.consignee?.address)
+      set("consigneeCity",    fields.consignee?.city)
+      set("consigneeState",   fields.consignee?.state)
+      set("consigneeZip",     fields.consignee?.zip)
+
+      // Stop 0 — pickup (prefer explicit pickup, fall back to shipper)
+      const pu = fields.pickup ?? fields.shipper
+      set("stops.0.name",    pu?.name)
+      set("stops.0.address", pu?.address)
+      set("stops.0.city",    pu?.city)
+      set("stops.0.state",   pu?.state)
+      set("stops.0.zip",     pu?.zip)
+      set("stops.0.commodity", fields.commodity)
+      set("stops.0.weight",    fields.weight)
+      if (fields.pickup?.appointmentStart) {
+        set("stops.0.appointmentStart", fields.pickup.appointmentStart.slice(0, 16))
+      } else if (fields.detentionClockStart) {
+        set("stops.0.appointmentStart", fields.detentionClockStart.slice(0, 16))
+      }
+
+      // Stop 1 — delivery (prefer explicit delivery, fall back to consignee)
+      const dl = fields.delivery ?? fields.consignee
+      set("stops.1.name",    dl?.name)
+      set("stops.1.address", dl?.address)
+      set("stops.1.city",    dl?.city)
+      set("stops.1.state",   dl?.state)
+      set("stops.1.zip",     dl?.zip)
+      if (fields.delivery?.appointmentStart) {
+        set("stops.1.appointmentStart", fields.delivery.appointmentStart.slice(0, 16))
+      }
+
+      setExtracted(keys)
+    },
+    [setValue]
+  )
+
   async function onSubmit(data: CreateLoadFormValues) {
     setServerError(null)
     try {
-      const res = await fetch("/api/loads", {
+      const loadRes = await fetch("/api/loads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
-      const json = await res.json()
-      if (!res.ok) {
-        setServerError(json.error ?? "Failed to create load")
+      const loadJson = await loadRes.json()
+      if (!loadRes.ok) {
+        setServerError(loadJson.error ?? "Failed to create load")
         return
       }
-      router.push(`/loads/${json.load.id}`)
+
+      const loadId: string = loadJson.load.id
+
+      // Attach the uploaded document to the new load if one was extracted
+      if (pendingDoc) {
+        await fetch("/api/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            loadId,
+            fileUrl: pendingDoc.fileUrl,
+            fileSize: pendingDoc.fileSize,
+            mimeType: pendingDoc.mimeType,
+            fileHash: pendingDoc.fileHash,
+            documentType: pendingDoc.documentType,
+            extractedFields: pendingDoc.extractedFields,
+            confidence: pendingDoc.extractedFields.confidence,
+          }),
+        })
+      }
+
+      router.push(`/loads/${loadId}`)
     } catch {
       setServerError("Network error. Please try again.")
     }
@@ -112,68 +207,48 @@ export default function NewLoadPage() {
         </p>
       </div>
 
+      {/* AI extraction uploader */}
+      <DocumentUploader onExtracted={handleExtracted} />
+
       {serverError && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
           {serverError}
         </div>
       )}
 
+      {extracted.size > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <span className="font-semibold">Fields highlighted in amber</span> were auto-filled by AI — please review and confirm before saving.
+        </div>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        {/* Rate & References */}
         <Card>
-          <CardHeader>
-            <CardTitle>Rate &amp; References</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Rate &amp; References</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            <Input
-              label="BOL Number"
-              {...register("bolNumber")}
-              error={errors.bolNumber?.message}
-            />
-            <Input
-              label="PO Number"
-              {...register("poNumber")}
-              error={errors.poNumber?.message}
-            />
-            <Input
-              label="Rate Conf #"
-              {...register("rateConfNumber")}
-              error={errors.rateConfNumber?.message}
-            />
-            <Input
-              label="Broker Ref #"
-              {...register("brokerRefNumber")}
-              error={errors.brokerRefNumber?.message}
-            />
-            <Select
-              label="Rate Type"
-              options={RATE_TYPES}
-              {...register("rateType")}
-              error={errors.rateType?.message}
-            />
-            <Input
-              label="Agreed Rate ($)"
-              type="number"
-              step="0.01"
-              {...register("agreedRate", { valueAsNumber: true })}
-              error={errors.agreedRate?.message}
-            />
-            <Input
-              label="Fuel Surcharge ($)"
-              type="number"
-              step="0.01"
-              {...register("fuelSurcharge", { valueAsNumber: true })}
-              error={errors.fuelSurcharge?.message}
-            />
-            <Input
-              label="Mileage"
-              type="number"
-              step="0.1"
-              {...register("mileage", { valueAsNumber: true })}
-              error={errors.mileage?.message}
-            />
+            <AiField name="bolNumber" extracted={extracted}>
+              <Input label="BOL Number" {...register("bolNumber")} error={errors.bolNumber?.message} />
+            </AiField>
+            <AiField name="poNumber" extracted={extracted}>
+              <Input label="PO Number" {...register("poNumber")} error={errors.poNumber?.message} />
+            </AiField>
+            <AiField name="rateConfNumber" extracted={extracted}>
+              <Input label="Rate Conf #" {...register("rateConfNumber")} error={errors.rateConfNumber?.message} />
+            </AiField>
+            <Input label="Broker Ref #" {...register("brokerRefNumber")} error={errors.brokerRefNumber?.message} />
+            <AiField name="rateType" extracted={extracted}>
+              <Select label="Rate Type" options={RATE_TYPES} {...register("rateType")} error={errors.rateType?.message} />
+            </AiField>
+            <AiField name="agreedRate" extracted={extracted}>
+              <Input label="Agreed Rate ($)" type="number" step="0.01" {...register("agreedRate", { valueAsNumber: true })} error={errors.agreedRate?.message} />
+            </AiField>
+            <Input label="Fuel Surcharge ($)" type="number" step="0.01" {...register("fuelSurcharge", { valueAsNumber: true })} error={errors.fuelSurcharge?.message} />
+            <Input label="Mileage" type="number" step="0.1" {...register("mileage", { valueAsNumber: true })} error={errors.mileage?.message} />
           </CardContent>
         </Card>
 
+        {/* Stops */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -183,16 +258,7 @@ export default function NewLoadPage() {
                 variant="secondary"
                 size="sm"
                 onClick={() =>
-                  append({
-                    stopType: "DELIVERY",
-                    stopNumber: fields.length + 1,
-                    name: "",
-                    address: "",
-                    city: "",
-                    state: "",
-                    zip: "",
-                    weightUnit: "lbs",
-                  })
+                  append({ stopType: "DELIVERY", stopNumber: fields.length + 1, name: "", address: "", city: "", state: "", zip: "", weightUnit: "lbs" })
                 }
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -202,173 +268,121 @@ export default function NewLoadPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             {errors.stops?.root && (
-              <p className="text-xs text-red-600">
-                {errors.stops.root.message}
-              </p>
+              <p className="text-xs text-red-600">{errors.stops.root.message}</p>
             )}
             {fields.map((field, idx) => (
-              <div
-                key={field.id}
-                className="border border-gray-200 rounded-lg p-4 space-y-4"
-              >
+              <div key={field.id} className="border border-gray-200 rounded-lg p-4 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-gray-700">
-                    Stop {idx + 1}
-                  </h4>
+                  <h4 className="text-sm font-semibold text-gray-700">Stop {idx + 1}</h4>
                   {fields.length > 2 && (
-                    <button
-                      type="button"
-                      onClick={() => remove(idx)}
-                      className="text-red-400 hover:text-red-600 transition"
-                    >
+                    <button type="button" onClick={() => remove(idx)} className="text-red-400 hover:text-red-600 transition">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <Select
-                    label="Stop Type"
-                    options={STOP_TYPES}
-                    {...register(`stops.${idx}.stopType`)}
-                    error={errors.stops?.[idx]?.stopType?.message}
-                  />
-                  <Input
-                    label="Facility Name"
-                    {...register(`stops.${idx}.name`)}
-                    error={errors.stops?.[idx]?.name?.message}
-                  />
-                  <Input
-                    label="Address"
-                    className="col-span-2"
-                    {...register(`stops.${idx}.address`)}
-                    error={errors.stops?.[idx]?.address?.message}
-                  />
-                  <Input
-                    label="City"
-                    {...register(`stops.${idx}.city`)}
-                    error={errors.stops?.[idx]?.city?.message}
-                  />
-                  <Select
-                    label="State"
-                    options={US_STATES}
-                    placeholder="Select state"
-                    {...register(`stops.${idx}.state`)}
-                    error={errors.stops?.[idx]?.state?.message}
-                  />
-                  <Input
-                    label="ZIP Code"
-                    {...register(`stops.${idx}.zip`)}
-                    error={errors.stops?.[idx]?.zip?.message}
-                  />
-                  <Input
-                    label="Contact Name"
-                    {...register(`stops.${idx}.contactName`)}
-                  />
-                  <Input
-                    label="Appt Start"
-                    type="datetime-local"
-                    {...register(`stops.${idx}.appointmentStart`)}
-                  />
-                  <Input
-                    label="Appt End"
-                    type="datetime-local"
-                    {...register(`stops.${idx}.appointmentEnd`)}
-                  />
-                  <Input
-                    label="Commodity"
-                    {...register(`stops.${idx}.commodity`)}
-                  />
-                  <Input
-                    label="Weight (lbs)"
-                    type="number"
-                    step="0.01"
-                    {...register(`stops.${idx}.weight`, { valueAsNumber: true })}
-                  />
+                  <Select label="Stop Type" options={STOP_TYPES} {...register(`stops.${idx}.stopType`)} error={errors.stops?.[idx]?.stopType?.message} />
+                  <AiField name={`stops.${idx}.name`} extracted={extracted}>
+                    <Input label="Facility Name" {...register(`stops.${idx}.name`)} error={errors.stops?.[idx]?.name?.message} />
+                  </AiField>
+                  <AiField name={`stops.${idx}.address`} extracted={extracted}>
+                    <Input label="Address" className="col-span-2" {...register(`stops.${idx}.address`)} error={errors.stops?.[idx]?.address?.message} />
+                  </AiField>
+                  <AiField name={`stops.${idx}.city`} extracted={extracted}>
+                    <Input label="City" {...register(`stops.${idx}.city`)} error={errors.stops?.[idx]?.city?.message} />
+                  </AiField>
+                  <AiField name={`stops.${idx}.state`} extracted={extracted}>
+                    <Select label="State" options={US_STATES} placeholder="Select state" {...register(`stops.${idx}.state`)} error={errors.stops?.[idx]?.state?.message} />
+                  </AiField>
+                  <AiField name={`stops.${idx}.zip`} extracted={extracted}>
+                    <Input label="ZIP Code" {...register(`stops.${idx}.zip`)} error={errors.stops?.[idx]?.zip?.message} />
+                  </AiField>
+                  <Input label="Contact Name" {...register(`stops.${idx}.contactName`)} />
+                  <AiField name={`stops.${idx}.appointmentStart`} extracted={extracted}>
+                    <Input label="Appt Start" type="datetime-local" {...register(`stops.${idx}.appointmentStart`)} />
+                  </AiField>
+                  <Input label="Appt End" type="datetime-local" {...register(`stops.${idx}.appointmentEnd`)} />
+                  <AiField name={`stops.${idx}.commodity`} extracted={extracted}>
+                    <Input label="Commodity" {...register(`stops.${idx}.commodity`)} />
+                  </AiField>
+                  <AiField name={`stops.${idx}.weight`} extracted={extracted}>
+                    <Input label="Weight (lbs)" type="number" step="0.01" {...register(`stops.${idx}.weight`, { valueAsNumber: true })} />
+                  </AiField>
                 </div>
               </div>
             ))}
           </CardContent>
         </Card>
 
+        {/* Parties */}
         <Card>
-          <CardHeader>
-            <CardTitle>Parties</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Parties</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Shipper
-              </p>
-              <Input label="Company Name" {...register("shipperName")} />
-              <Input label="Address" {...register("shipperAddress")} />
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Shipper</p>
+              <AiField name="shipperName" extracted={extracted}>
+                <Input label="Company Name" {...register("shipperName")} />
+              </AiField>
+              <AiField name="shipperAddress" extracted={extracted}>
+                <Input label="Address" {...register("shipperAddress")} />
+              </AiField>
               <div className="grid grid-cols-3 gap-2">
-                <Input label="City" {...register("shipperCity")} />
-                <Select
-                  label="State"
-                  options={US_STATES}
-                  placeholder="ST"
-                  {...register("shipperState")}
-                />
-                <Input label="ZIP" {...register("shipperZip")} />
+                <AiField name="shipperCity" extracted={extracted}>
+                  <Input label="City" {...register("shipperCity")} />
+                </AiField>
+                <AiField name="shipperState" extracted={extracted}>
+                  <Select label="State" options={US_STATES} placeholder="ST" {...register("shipperState")} />
+                </AiField>
+                <AiField name="shipperZip" extracted={extracted}>
+                  <Input label="ZIP" {...register("shipperZip")} />
+                </AiField>
               </div>
             </div>
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Consignee
-              </p>
-              <Input label="Company Name" {...register("consigneeName")} />
-              <Input label="Address" {...register("consigneeAddress")} />
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Consignee</p>
+              <AiField name="consigneeName" extracted={extracted}>
+                <Input label="Company Name" {...register("consigneeName")} />
+              </AiField>
+              <AiField name="consigneeAddress" extracted={extracted}>
+                <Input label="Address" {...register("consigneeAddress")} />
+              </AiField>
               <div className="grid grid-cols-3 gap-2">
-                <Input label="City" {...register("consigneeCity")} />
-                <Select
-                  label="State"
-                  options={US_STATES}
-                  placeholder="ST"
-                  {...register("consigneeState")}
-                />
-                <Input label="ZIP" {...register("consigneeZip")} />
+                <AiField name="consigneeCity" extracted={extracted}>
+                  <Input label="City" {...register("consigneeCity")} />
+                </AiField>
+                <AiField name="consigneeState" extracted={extracted}>
+                  <Select label="State" options={US_STATES} placeholder="ST" {...register("consigneeState")} />
+                </AiField>
+                <AiField name="consigneeZip" extracted={extracted}>
+                  <Input label="ZIP" {...register("consigneeZip")} />
+                </AiField>
               </div>
             </div>
           </CardContent>
         </Card>
 
+        {/* Additional Details */}
         <Card>
-          <CardHeader>
-            <CardTitle>Additional Details</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Additional Details</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Input label="Trailer #" {...register("trailerNumber")} />
               <Input label="Truck #" {...register("truckNumber")} />
               <Input label="Seal #" {...register("sealNumber")} />
-              <Input
-                label="Free Time (min)"
-                type="number"
-                {...register("freeTimeMinutes", { valueAsNumber: true })}
-              />
+              <Input label="Free Time (min)" type="number" {...register("freeTimeMinutes", { valueAsNumber: true })} />
             </div>
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  {...register("hazmatFlag")}
-                  className="rounded"
-                />
+                <input type="checkbox" {...register("hazmatFlag")} className="rounded" />
                 Hazmat
               </label>
               <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  {...register("tempRequired")}
-                  className="rounded"
-                />
+                <input type="checkbox" {...register("tempRequired")} className="rounded" />
                 Temperature Controlled
               </label>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Special Instructions
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Special Instructions</label>
               <textarea
                 {...register("specialInstructions")}
                 rows={3}
@@ -380,16 +394,8 @@ export default function NewLoadPage() {
         </Card>
 
         <div className="flex justify-end gap-3">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => router.back()}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" loading={isSubmitting}>
-            Create Load
-          </Button>
+          <Button type="button" variant="secondary" onClick={() => router.back()}>Cancel</Button>
+          <Button type="submit" loading={isSubmitting}>Create Load</Button>
         </div>
       </form>
     </div>

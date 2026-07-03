@@ -101,17 +101,47 @@ export default function NewLoadPage() {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const set = (key: string, val: any) => {
-        if (val !== null && val !== undefined && val !== "") {
+        if (val === null || val === undefined || val === "") return
+        try {
           setValue(key as Parameters<typeof setValue>[0], val)
           keys.add(key)
+        } catch (e) {
+          console.warn(`[AI fill] Could not set ${key}:`, e)
         }
       }
+
+      // Strip currency symbols, commas, and units — return null if not parseable
+      const toNum = (v: unknown): number | null => {
+        if (v === null || v === undefined) return null
+        const n = parseFloat(String(v).replace(/[$,\s]/g, "").replace(/[^\d.]/g, ""))
+        return isNaN(n) ? null : n
+      }
+
+      // Normalize any date string to YYYY-MM-DDTHH:MM (required by datetime-local inputs)
+      // Returns null if the value can't be parsed into a valid date
+      const toDtLocal = (v: string | null | undefined): string | null => {
+        if (!v) return null
+        // Already ISO-like: YYYY-MM-DDTHH:MM(:SS)
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(0, 16)
+        try {
+          const d = new Date(v)
+          if (isNaN(d.getTime())) return null
+          return d.toISOString().slice(0, 16)
+        } catch { return null }
+      }
+
+      const VALID_RATE_TYPES = new Set([
+        "FLAT_RATE","PER_MILE","PER_TON","PER_UNIT","PER_PALLET",
+        "PER_CWT","PER_CASE","PER_GALLON","CUSTOM_FORMULA",
+      ])
 
       set("bolNumber", fields.bolNumber)
       set("poNumber", fields.poNumber)
       set("rateConfNumber", fields.rateConfNumber)
-      set("agreedRate", fields.rate)
-      if (fields.rateType) set("rateType", fields.rateType)
+      set("agreedRate", toNum(fields.rate))
+      if (fields.rateType && VALID_RATE_TYPES.has(fields.rateType)) {
+        set("rateType", fields.rateType)
+      }
 
       // Shipper party
       set("shipperName",    fields.shipper?.name)
@@ -129,18 +159,15 @@ export default function NewLoadPage() {
 
       // Stop 0 — pickup (prefer explicit pickup, fall back to shipper)
       const pu = fields.pickup ?? fields.shipper
-      set("stops.0.name",    pu?.name)
-      set("stops.0.address", pu?.address)
-      set("stops.0.city",    pu?.city)
-      set("stops.0.state",   pu?.state)
-      set("stops.0.zip",     pu?.zip)
+      set("stops.0.name",      pu?.name)
+      set("stops.0.address",   pu?.address)
+      set("stops.0.city",      pu?.city)
+      set("stops.0.state",     pu?.state)
+      set("stops.0.zip",       pu?.zip)
       set("stops.0.commodity", fields.commodity)
-      set("stops.0.weight",    fields.weight)
-      if (fields.pickup?.appointmentStart) {
-        set("stops.0.appointmentStart", fields.pickup.appointmentStart.slice(0, 16))
-      } else if (fields.detentionClockStart) {
-        set("stops.0.appointmentStart", fields.detentionClockStart.slice(0, 16))
-      }
+      set("stops.0.weight",    toNum(fields.weight))
+      const puAppt = toDtLocal(fields.pickup?.appointmentStart ?? fields.detentionClockStart)
+      if (puAppt) set("stops.0.appointmentStart", puAppt)
 
       // Stop 1 — delivery (prefer explicit delivery, fall back to consignee)
       const dl = fields.delivery ?? fields.consignee
@@ -149,9 +176,8 @@ export default function NewLoadPage() {
       set("stops.1.city",    dl?.city)
       set("stops.1.state",   dl?.state)
       set("stops.1.zip",     dl?.zip)
-      if (fields.delivery?.appointmentStart) {
-        set("stops.1.appointmentStart", fields.delivery.appointmentStart.slice(0, 16))
-      }
+      const dlAppt = toDtLocal(fields.delivery?.appointmentStart)
+      if (dlAppt) set("stops.1.appointmentStart", dlAppt)
 
       setExtracted(keys)
     },

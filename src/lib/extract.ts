@@ -104,9 +104,12 @@ export async function extractDocumentFields(
   // Strip markdown code fences if Claude includes them
   const json = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim()
 
+  console.log("[extract] Raw Claude response:", text)
+
   try {
     return JSON.parse(json) as ExtractedDocument
-  } catch {
+  } catch (e) {
+    console.error("[extract] JSON parse failed:", e, "raw:", text)
     return { confidence: {} }
   }
 }

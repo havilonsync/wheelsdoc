@@ -14,10 +14,10 @@ import { cn } from "@/lib/utils"
 import type { ExtractedDocument } from "@/lib/extract"
 
 export type PendingDocument = {
-  fileUrl: string
+  fileUrl: string | null
   fileSize: number
   mimeType: string
-  fileHash: string
+  fileHash: string | null
   documentType: string
   extractedFields: ExtractedDocument
 }

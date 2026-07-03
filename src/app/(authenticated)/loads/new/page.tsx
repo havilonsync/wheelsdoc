@@ -200,8 +200,8 @@ export default function NewLoadPage() {
 
       const loadId: string = loadJson.load.id
 
-      // Attach the uploaded document to the new load if one was extracted
-      if (pendingDoc) {
+      // Attach the uploaded document to the new load if storage succeeded
+      if (pendingDoc?.fileUrl) {
         await fetch("/api/documents", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -21,7 +21,8 @@ export async function storeFile(buffer: Buffer, mimeType: string): Promise<Store
     return { url: blob.url, size: buffer.length, hash }
   }
 
-  // Local dev: write to public/uploads
+  // Local dev: write to public/uploads (served as static files)
+  // On read-only serverless filesystems this will throw — callers should handle that
   const { writeFile, mkdir } = await import("fs/promises")
   const dir = path.join(process.cwd(), "public", "uploads")
   await mkdir(dir, { recursive: true })

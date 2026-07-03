@@ -1,0 +1,912 @@
+// HaulPass — Digital Freight Documentation Platform
+// Prisma 7 Schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  PLATFORM_ADMIN
+  CARRIER_ADMIN
+  DISPATCHER
+  DRIVER
+  SHIPPER
+  RECEIVER
+  BROKER
+  FACTORING_COMPANY
+  ACCOUNTANT
+  AUDITOR
+}
+
+enum OrgType {
+  CARRIER
+  SHIPPER
+  BROKER
+  FACTORING_COMPANY
+  RECEIVER
+  LOGISTICS
+}
+
+enum OrgPlan {
+  FREE_DRIVER
+  OWNER_OPERATOR
+  SMALL_CARRIER
+  FLEET
+  SHIPPER_BROKER
+  FACTORING_PARTNER
+  ENTERPRISE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum LoadStatus {
+  DRAFT
+  ASSIGNED
+  ACCEPTED
+  EN_ROUTE_PICKUP
+  ARRIVED_PICKUP
+  LOADING
+  DEPARTED_PICKUP
+  EN_ROUTE_DELIVERY
+  ARRIVED_DELIVERY
+  UNLOADING
+  DELIVERED
+  DOCS_NEEDED
+  RECONCILIATION_NEEDED
+  RECONCILED
+  INVOICE_READY
+  SUBMITTED_TO_FACTORING
+  PAID
+  DISPUTED
+  ARCHIVED
+}
+
+enum RateType {
+  FLAT_RATE
+  PER_MILE
+  PER_TON
+  PER_UNIT
+  PER_PALLET
+  PER_CWT
+  PER_CASE
+  PER_GALLON
+  CUSTOM_FORMULA
+}
+
+enum StopType {
+  PICKUP
+  DELIVERY
+}
+
+enum PartyType {
+  SHIPPER
+  CONSIGNEE
+  CARRIER
+  BROKER
+  FACTORING
+}
+
+enum DocumentType {
+  BOL
+  POD
+  RATE_CONFIRMATION
+  SCALE_TICKET
+  LUMPER_RECEIPT
+  INVOICE
+  INSURANCE
+  CUSTOMS
+  HAZMAT
+  EXCEPTION_REPORT
+  PHOTOS
+  OTHER
+}
+
+enum OcrStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  DISPUTED
+  FAILED
+}
+
+enum GPSEventType {
+  DRIVER_ACCEPTED
+  DEPARTED_YARD
+  ARRIVED_PICKUP
+  DEPARTED_PICKUP
+  ARRIVED_DELIVERY
+  DEPARTED_DELIVERY
+  ARRIVED_YARD
+  FUEL_STOP
+  REST_STOP
+  BREAKDOWN
+  CUSTOM
+}
+
+enum CheckStatus {
+  PASS
+  FAIL
+  WARNING
+  NOT_APPLICABLE
+}
+
+enum CheckSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum ReconciliationStatus {
+  READY_FOR_FACTORING
+  NEEDS_ATTENTION
+  ACTION_REQUIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  DISPUTED
+  VOID
+}
+
+enum LineItemType {
+  BASE
+  DETENTION
+  LUMPER
+  ACCESSORIAL
+  DEDUCTION
+  TAX
+}
+
+enum FactoringPacketStatus {
+  DRAFT
+  READY
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+  FUNDED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+  PAUSED
+}
+
+enum IntegrationType {
+  GOOGLE_MAPS
+  MAPBOX
+  OPENAI_OCR
+  GOOGLE_VISION
+  AWS_TEXTRACT
+  TWILIO
+  SIGNALWIRE
+  RESEND
+  SENDGRID
+  STRIPE
+  QUICKBOOKS
+  MCLEOD
+  SAMSARA
+}
+
+// ─── Auth / User ─────────────────────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  phone          String?
+  avatar         String?
+  hashedPassword String?
+  emailVerified  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  sessions            Session[]
+  accounts            Account[]
+  memberships         OrganizationMembership[]
+  sentInvitations     Invitation[]            @relation("InvitedBy")
+  uploadedDocuments   Document[]
+  signatures          Signature[]
+  gpsEvents           GPSEvent[]
+  breadcrumbs         LocationBreadcrumb[]
+  resolvedChecks      ReconciliationCheck[]   @relation("ResolvedBy")
+  createdLoads        Load[]                  @relation("CreatedBy")
+  assignedLoads       Load[]                  @relation("AssignedDriver")
+  loadNotes           LoadNote[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  createdTemplates    LoadTemplate[]
+  submittedPackets    FactoringPacket[]       @relation("SubmittedBy")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Organization ─────────────────────────────────────────────────────────────
+
+model Organization {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  orgType      OrgType
+  logo         String?
+  primaryColor String   @default("#1E3A5F")
+  accentColor  String   @default("#F59E0B")
+  plan         OrgPlan  @default(FREE_DRIVER)
+  dotNumber    String?
+  mcNumber     String?
+  website      String?
+  phone        String?
+  address      String?
+  city         String?
+  state        String?
+  zip          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships      OrganizationMembership[]
+  invitations      Invitation[]
+  loads            Load[]
+  templates        LoadTemplate[]
+  loadParties      LoadParty[]
+  apiKeys          APIKey[]
+  integrations     IntegrationConnection[]
+  subscription     OrganizationSubscription?
+  usageMetrics     UsageMetric[]
+  notifications    Notification[]
+  receivedPackets  FactoringPacket[]         @relation("SubmittedTo")
+  billedInvoices   Invoice[]                 @relation("BilledTo")
+  auditLogs        AuditLog[]
+}
+
+model OrganizationMembership {
+  id         String           @id @default(cuid())
+  userId     String
+  orgId      String
+  role       UserRole
+  status     MembershipStatus @default(PENDING)
+  invitedAt  DateTime         @default(now())
+  acceptedAt DateTime?
+  updatedAt  DateTime         @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  email       String
+  orgId       String
+  role        UserRole
+  token       String           @unique @default(cuid())
+  expiresAt   DateTime
+  status      InvitationStatus @default(PENDING)
+  invitedById String?
+  createdAt   DateTime         @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  invitedBy    User?        @relation("InvitedBy", fields: [invitedById], references: [id])
+}
+
+// ─── Load Core ────────────────────────────────────────────────────────────────
+
+model Load {
+  id                  String     @id @default(cuid())
+  loadNumber          String     @unique
+  bolNumber           String?
+  poNumber            String?
+  rateConfNumber      String?
+  brokerRefNumber     String?
+  orgId               String
+  status              LoadStatus @default(DRAFT)
+  rateType            RateType   @default(FLAT_RATE)
+  agreedRate          Decimal    @default(0) @db.Decimal(10, 2)
+  fuelSurcharge       Decimal    @default(0) @db.Decimal(10, 2)
+  mileage             Decimal?   @db.Decimal(10, 2)
+  templateId          String?
+  hazmatFlag          Boolean    @default(false)
+  tempRequired        Boolean    @default(false)
+  tempMin             Decimal?   @db.Decimal(5, 2)
+  tempMax             Decimal?   @db.Decimal(5, 2)
+  sealNumber          String?
+  trailerNumber       String?
+  truckNumber         String?
+  specialInstructions String?    @db.Text
+  detentionTerms      String?
+  freeTimeMinutes     Int        @default(120)
+  lumperTerms         String?
+  rateFormula         String?
+  createdById         String
+  assignedDriverId    String?
+  factReadinessScore  Int        @default(0)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  organization       Organization       @relation(fields: [orgId], references: [id])
+  createdBy          User               @relation("CreatedBy", fields: [createdById], references: [id])
+  assignedDriver     User?              @relation("AssignedDriver", fields: [assignedDriverId], references: [id])
+  template           LoadTemplate?      @relation(fields: [templateId], references: [id])
+  stops              LoadStop[]
+  parties            LoadParty[]
+  documents          Document[]
+  signatures         Signature[]
+  gpsEvents          GPSEvent[]
+  breadcrumbs        LocationBreadcrumb[]
+  reconciliationChecks ReconciliationCheck[]
+  reconciliationResult ReconciliationResult?
+  invoice            Invoice?
+  factoringPacket    FactoringPacket?
+  detentionEvents    DetentionEvent[]
+  accessorialCharges AccessorialCharge[]
+  notes              LoadNote[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  digitalBOL         DigitalBOL?
+  qrTokens           QRAccessToken[]
+}
+
+model LoadStop {
+  id               String    @id @default(cuid())
+  loadId           String
+  stopType         StopType
+  stopNumber       Int
+  name             String
+  address          String
+  city             String
+  state            String
+  zip              String
+  contactName      String?
+  contactPhone     String?
+  appointmentStart DateTime?
+  appointmentEnd   DateTime?
+  actualArrival    DateTime?
+  actualDeparture  DateTime?
+  commodity        String?
+  quantity         Decimal?  @db.Decimal(10, 3)
+  unitType         String?
+  weight           Decimal?  @db.Decimal(10, 2)
+  weightUnit       String    @default("lbs")
+  notes            String?   @db.Text
+  createdAt        DateTime  @default(now())
+
+  load            Load             @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  signatures      Signature[]
+  detentionEvents DetentionEvent[]
+
+  @@unique([loadId, stopType, stopNumber])
+}
+
+model LoadParty {
+  id           String    @id @default(cuid())
+  loadId       String
+  partyType    PartyType
+  orgId        String?
+  name         String
+  address      String?
+  city         String?
+  state        String?
+  zip          String?
+  contactName  String?
+  contactPhone String?
+  email        String?
+
+  load         Load          @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [orgId], references: [id])
+}
+
+model LoadTemplate {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  fields      Json
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  loads        Load[]
+}
+
+// ─── BOL ──────────────────────────────────────────────────────────────────────
+
+model DigitalBOL {
+  id              String   @id @default(cuid())
+  loadId          String   @unique
+  bolNumber       String
+  version         Int      @default(1)
+  status          String   @default("draft")
+  generatedPdfUrl String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  load      Load          @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  lineItems BOLLineItem[]
+}
+
+model BOLLineItem {
+  id              String  @id @default(cuid())
+  bolId           String
+  description     String
+  quantity        Decimal @db.Decimal(10, 3)
+  unitType        String
+  weight          Decimal @db.Decimal(10, 2)
+  weightUnit      String  @default("lbs")
+  packageType     String?
+  specialHandling String?
+  hazmatClass     String?
+  notes           String? @db.Text
+
+  bol DigitalBOL @relation(fields: [bolId], references: [id], onDelete: Cascade)
+}
+
+// ─── Documents ────────────────────────────────────────────────────────────────
+
+model Document {
+  id                 String             @id @default(cuid())
+  loadId             String
+  documentType       DocumentType
+  uploadedById       String
+  timestamp          DateTime           @default(now())
+  latitude           Decimal?           @db.Decimal(10, 7)
+  longitude          Decimal?           @db.Decimal(10, 7)
+  ocrStatus          OcrStatus          @default(PENDING)
+  extractedFields    Json?
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  notes              String?            @db.Text
+  fileHash           String?
+  originalFileUrl    String
+  processedFileUrl   String?
+  fileSize           Int?
+  mimeType           String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  load          Load                     @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  uploadedBy    User                     @relation(fields: [uploadedById], references: [id])
+  extractions   DocumentExtraction[]
+  packetDocs    FactoringPacketDocument[]
+}
+
+model DocumentExtraction {
+  id          String   @id @default(cuid())
+  documentId  String
+  provider    String
+  extractedAt DateTime @default(now())
+  fields      Json
+  confidence  Decimal  @db.Decimal(5, 4)
+  rawResponse Json?
+  status      String   @default("completed")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+// ─── Signatures ───────────────────────────────────────────────────────────────
+
+model Signature {
+  id                  String   @id @default(cuid())
+  loadId              String
+  stopId              String?
+  signerName          String
+  signerRole          String
+  signerEmail         String?
+  signatureImageUrl   String
+  signedAt            DateTime @default(now())
+  latitude            Decimal? @db.Decimal(10, 7)
+  longitude           Decimal? @db.Decimal(10, 7)
+  ipAddress           String?
+  deviceInfo          Json?
+  documentVersionHash String?
+  loadStatusAtSigning String?
+  uploadedById        String?
+
+  load       Load      @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  stop       LoadStop? @relation(fields: [stopId], references: [id])
+  uploadedBy User?     @relation(fields: [uploadedById], references: [id])
+}
+
+// ─── GPS / Events ─────────────────────────────────────────────────────────────
+
+model GPSEvent {
+  id         String       @id @default(cuid())
+  loadId     String
+  driverId   String
+  eventType  GPSEventType
+  timestamp  DateTime     @default(now())
+  latitude   Decimal      @db.Decimal(10, 7)
+  longitude  Decimal      @db.Decimal(10, 7)
+  accuracy   Decimal?     @db.Decimal(8, 2)
+  notes      String?      @db.Text
+  documentId String?
+
+  load   Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  driver User @relation(fields: [driverId], references: [id])
+}
+
+model LocationBreadcrumb {
+  id        String   @id @default(cuid())
+  loadId    String
+  driverId  String
+  timestamp DateTime @default(now())
+  latitude  Decimal  @db.Decimal(10, 7)
+  longitude Decimal  @db.Decimal(10, 7)
+  accuracy  Decimal? @db.Decimal(8, 2)
+  speed     Decimal? @db.Decimal(8, 2)
+
+  load   Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  driver User @relation(fields: [driverId], references: [id])
+}
+
+// ─── Reconciliation ───────────────────────────────────────────────────────────
+
+model ReconciliationCheck {
+  id            String        @id @default(cuid())
+  loadId        String
+  checkType     String
+  status        CheckStatus
+  severity      CheckSeverity
+  message       String
+  expectedValue String?
+  actualValue   String?
+  resolvedAt    DateTime?
+  resolvedById  String?
+  notes         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  load       Load  @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  resolvedBy User? @relation("ResolvedBy", fields: [resolvedById], references: [id])
+}
+
+model ReconciliationResult {
+  id             String               @id @default(cuid())
+  loadId         String               @unique
+  overallStatus  ReconciliationStatus
+  readinessScore Int
+  checkCount     Int
+  issueCount     Int
+  resolvedCount  Int
+  lastRunAt      DateTime             @default(now())
+  summary        Json?
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+}
+
+// ─── Invoice / Billing ────────────────────────────────────────────────────────
+
+model Invoice {
+  id                String        @id @default(cuid())
+  loadId            String        @unique
+  invoiceNumber     String        @unique
+  status            InvoiceStatus @default(DRAFT)
+  baseAmount        Decimal       @default(0) @db.Decimal(10, 2)
+  detentionAmount   Decimal       @default(0) @db.Decimal(10, 2)
+  lumperAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  accessorialAmount Decimal       @default(0) @db.Decimal(10, 2)
+  fuelSurcharge     Decimal       @default(0) @db.Decimal(10, 2)
+  totalAmount       Decimal       @default(0) @db.Decimal(10, 2)
+  paidAmount        Decimal       @default(0) @db.Decimal(10, 2)
+  currency          String        @default("USD")
+  paymentTerms      String        @default("NET30")
+  dueDate           DateTime?
+  paidAt            DateTime?
+  billToOrgId       String?
+  notes             String?       @db.Text
+  generatedPdfUrl   String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  load      Load          @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  billToOrg Organization? @relation("BilledTo", fields: [billToOrgId], references: [id])
+  lineItems InvoiceLineItem[]
+}
+
+model InvoiceLineItem {
+  id          String       @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal      @db.Decimal(10, 3)
+  unit        String
+  unitPrice   Decimal      @db.Decimal(10, 2)
+  amount      Decimal      @db.Decimal(10, 2)
+  lineType    LineItemType @default(BASE)
+  sortOrder   Int          @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model DetentionEvent {
+  id                  String    @id @default(cuid())
+  loadId              String
+  stopId              String?
+  arrivedAt           DateTime
+  freeTimeExpiredAt   DateTime?
+  billingStartAt      DateTime?
+  departedAt          DateTime?
+  billableMinutes     Int?
+  ratePerHour         Decimal?  @db.Decimal(10, 2)
+  totalAmount         Decimal?  @db.Decimal(10, 2)
+  evidenceDocumentIds Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  load Load      @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  stop LoadStop? @relation(fields: [stopId], references: [id])
+}
+
+model AccessorialCharge {
+  id                 String   @id @default(cuid())
+  loadId             String
+  chargeType         String
+  description        String
+  amount             Decimal  @db.Decimal(10, 2)
+  evidenceDocumentId String?
+  createdAt          DateTime @default(now())
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+}
+
+// ─── Factoring ────────────────────────────────────────────────────────────────
+
+model FactoringPacket {
+  id               String                @id @default(cuid())
+  loadId           String                @unique
+  status           FactoringPacketStatus @default(DRAFT)
+  readinessScore   Int                   @default(0)
+  packetPdfUrl     String?
+  packetZipUrl     String?
+  submittedAt      DateTime?
+  submittedToOrgId String?
+  submittedById    String?
+  respondedAt      DateTime?
+  response         String?
+  notes            String?               @db.Text
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  load        Load                      @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  submittedTo Organization?             @relation("SubmittedTo", fields: [submittedToOrgId], references: [id])
+  submittedBy User?                     @relation("SubmittedBy", fields: [submittedById], references: [id])
+  documents   FactoringPacketDocument[]
+}
+
+model FactoringPacketDocument {
+  id           String       @id @default(cuid())
+  packetId     String
+  documentId   String
+  documentType DocumentType
+  included     Boolean      @default(true)
+
+  packet   FactoringPacket @relation(fields: [packetId], references: [id], onDelete: Cascade)
+  document Document        @relation(fields: [documentId], references: [id])
+}
+
+// ─── Notifications / Comms ────────────────────────────────────────────────────
+
+model Notification {
+  id          String              @id @default(cuid())
+  userId      String
+  orgId       String?
+  loadId      String?
+  type        String
+  title       String
+  body        String              @db.Text
+  read        Boolean             @default(false)
+  readAt      DateTime?
+  channel     NotificationChannel @default(IN_APP)
+  sentAt      DateTime            @default(now())
+  deliveredAt DateTime?
+  data        Json?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [orgId], references: [id])
+  load         Load?         @relation(fields: [loadId], references: [id])
+}
+
+model LoadNote {
+  id               String   @id @default(cuid())
+  loadId           String
+  authorId         String
+  content          String   @db.Text
+  attachmentUrl    String?
+  isActionItem     Boolean  @default(false)
+  mentionedUserIds Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  load   Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+}
+
+// ─── Admin / Billing ──────────────────────────────────────────────────────────
+
+model SubscriptionPlan {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  monthlyPrice  Decimal  @db.Decimal(10, 2)
+  annualPrice   Decimal? @db.Decimal(10, 2)
+  maxLoads      Int?
+  maxDrivers    Int?
+  maxUsers      Int?
+  features      Json
+  stripePriceId String?
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+
+  subscriptions OrganizationSubscription[]
+}
+
+model OrganizationSubscription {
+  id                   String             @id @default(cuid())
+  orgId                String             @unique
+  planId               String
+  status               SubscriptionStatus @default(TRIALING)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  loadsUsed            Int                @default(0)
+  usersUsed            Int                @default(0)
+  driversUsed          Int                @default(0)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  organization Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+}
+
+model UsageMetric {
+  id          String   @id @default(cuid())
+  orgId       String
+  metricType  String
+  count       Int      @default(0)
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+// ─── Security / Audit ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  orgId      String?
+  loadId     String?
+  action     String
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [orgId], references: [id])
+  load         Load?         @relation(fields: [loadId], references: [id])
+}
+
+model QRAccessToken {
+  id            String    @id @default(cuid())
+  loadId        String
+  token         String    @unique @default(cuid())
+  permissions   Json
+  expiresAt     DateTime
+  scannedCount  Int       @default(0)
+  lastScannedAt DateTime?
+  isRevoked     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  load Load @relation(fields: [loadId], references: [id], onDelete: Cascade)
+}
+
+model APIKey {
+  id          String    @id @default(cuid())
+  orgId       String
+  name        String
+  keyHash     String    @unique
+  permissions Json
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+// ─── Integrations ─────────────────────────────────────────────────────────────
+
+model IntegrationConnection {
+  id              String          @id @default(cuid())
+  orgId           String
+  integrationType IntegrationType
+  credentials     Json?
+  status          String          @default("disconnected")
+  lastSyncAt      DateTime?
+  config          Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, integrationType])
+}

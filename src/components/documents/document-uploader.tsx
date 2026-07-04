@@ -41,6 +41,7 @@ export function DocumentUploader({ onExtracted }: DocumentUploaderProps) {
   const [preview, setPreview] = useState<string | null>(null)
   const [docType, setDocType] = useState("BOL")
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle")
+  const [ocrStatus, setOcrStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [fieldCount, setFieldCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -94,8 +95,13 @@ export function DocumentUploader({ onExtracted }: DocumentUploaderProps) {
       if (!res.ok) throw new Error(data.error ?? "Extraction failed")
 
       const fields: ExtractedDocument = data.extractedFields ?? {}
+      setOcrStatus(data.ocrStatus ?? null)
+
+      // Log everything to browser console for debugging
       console.log("[uploader] ocrStatus:", data.ocrStatus)
-      console.log("[uploader] extractedFields:", JSON.stringify(fields, null, 2))
+      console.log("[uploader] _rawExtracted (pre-normalization):", JSON.stringify(data._rawExtracted, null, 2))
+      console.log("[uploader] extractedFields (normalized):", JSON.stringify(fields, null, 2))
+
       const count = countExtractedFields(fields)
       setFieldCount(count)
       setStatus("done")
@@ -219,11 +225,20 @@ export function DocumentUploader({ onExtracted }: DocumentUploaderProps) {
       )}
 
       {status === "done" && (
-        <div className="flex items-center gap-2 text-emerald-600 text-sm font-medium">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
+        <div className={`flex items-center gap-2 text-sm font-medium ${
+          fieldCount > 0 ? "text-emerald-600" : ocrStatus === "SKIPPED" ? "text-orange-500" : "text-gray-500"
+        }`}>
+          {fieldCount > 0
+            ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+            : <AlertCircle className="w-4 h-4 shrink-0" />
+          }
           {fieldCount > 0
             ? `Extracted ${fieldCount} field${fieldCount !== 1 ? "s" : ""} — review highlighted fields below`
-            : "Document processed — review the form below"}
+            : ocrStatus === "SKIPPED"
+              ? "AI extraction not configured — set ANTHROPIC_API_KEY in Vercel environment variables"
+              : ocrStatus === "FAILED"
+                ? "AI extraction failed — check server logs for details"
+                : "Document processed but no fields could be extracted — check browser console for raw Claude response"}
         </div>
       )}
     </div>

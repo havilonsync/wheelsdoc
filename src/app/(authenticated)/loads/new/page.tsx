@@ -136,16 +136,20 @@ export default function NewLoadPage() {
         "PER_CWT","PER_CASE","PER_GALLON","CUSTOM_FORMULA",
       ])
 
-      set("bolNumber", fields.bolNumber)
-      set("poNumber", fields.poNumber)
-      set("rateConfNumber", fields.rateConfNumber)
-      set("agreedRate", toNum(fields.rate))
+      set("bolNumber",       fields.bolNumber)
+      set("poNumber",        fields.poNumber)
+      set("rateConfNumber",  fields.rateConfNumber)
+      set("agreedRate",      toNum(fields.rate))
       if (fields.rateType && VALID_RATE_TYPES.has(fields.rateType)) {
         set("rateType", fields.rateType)
       }
 
       // Shipper party
-      set("shipperName",    fields.shipper?.name)
+      // Note: on a BOL "shipper" = origin party (the "From"), NOT the carrier
+      // carrierName identifies the trucking company — mapped to shipperName only
+      // if the shipper itself is missing
+      const shipperNameVal = fields.shipper?.name ?? (fields.shipper == null ? fields.carrierName : null)
+      set("shipperName",    shipperNameVal)
       set("shipperAddress", fields.shipper?.address)
       set("shipperCity",    fields.shipper?.city)
       set("shipperState",   fields.shipper?.state)
@@ -166,8 +170,11 @@ export default function NewLoadPage() {
       set("stops.0.state",     pu?.state)
       set("stops.0.zip",       pu?.zip)
       set("stops.0.commodity", fields.commodity)
-      set("stops.0.weight",    toNum(fields.weight))
-      const puAppt = toDtLocal(fields.pickup?.appointmentStart ?? fields.detentionClockStart)
+      set("stops.0.weight",    toNum(fields.weight ?? fields.grossWeight))
+      // Appointment: prefer pickup.appointmentStart, then shipDate, then detentionClockStart
+      const puAppt = toDtLocal(
+        fields.pickup?.appointmentStart ?? fields.shipDate ?? fields.detentionClockStart
+      )
       if (puAppt) set("stops.0.appointmentStart", puAppt)
 
       // Stop 1 — delivery (prefer explicit delivery, fall back to consignee)
@@ -179,6 +186,11 @@ export default function NewLoadPage() {
       set("stops.1.zip",     dl?.zip)
       const dlAppt = toDtLocal(fields.delivery?.appointmentStart)
       if (dlAppt) set("stops.1.appointmentStart", dlAppt)
+
+      // driverName has no form field — log for visibility
+      if (fields.driverName) {
+        console.log("[AI fill] driverName extracted (no form field):", fields.driverName)
+      }
 
       setExtracted(keys)
     },

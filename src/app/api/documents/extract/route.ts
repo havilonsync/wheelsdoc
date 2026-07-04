@@ -90,17 +90,22 @@ export async function POST(request: NextRequest) {
 
   // Extract with Claude if API key is configured
   let extractedFields = {}
+  let rawExtracted: Record<string, unknown> = {}
   let ocrStatus = "SKIPPED"
 
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       ocrStatus = "PROCESSING"
-      extractedFields = await extractDocumentFields(buffer, mimeType)
+      const result = await extractDocumentFields(buffer, mimeType)
+      extractedFields = result.normalized
+      rawExtracted = result.raw
       ocrStatus = "COMPLETED"
     } catch (err) {
       console.error("[extract] Claude extraction failed:", err)
       ocrStatus = "FAILED"
     }
+  } else {
+    console.warn("[extract] ANTHROPIC_API_KEY is not set — skipping extraction")
   }
 
   return NextResponse.json({
@@ -112,5 +117,7 @@ export async function POST(request: NextRequest) {
     fileHash: stored?.hash ?? null,
     documentType,
     extractedFields,
+    // Raw pre-normalization response — visible in browser DevTools Network tab
+    _rawExtracted: rawExtracted,
   })
 }

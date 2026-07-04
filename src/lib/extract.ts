@@ -10,25 +10,48 @@ export type ExtractedParty = {
 }
 
 export type ExtractedDocument = {
+  // Core parties
   shipper?: ExtractedParty | null
   consignee?: ExtractedParty | null
   pickup?: ExtractedParty | null
   delivery?: ExtractedParty | null
+  // Cargo
   commodity?: string | null
   weight?: number | null
   weightUnit?: string | null
+  grossWeight?: number | null
+  // References
   bolNumber?: string | null
   poNumber?: string | null
   rateConfNumber?: string | null
+  // Rate
   rate?: number | null
   rateType?: string | null
+  // Timing
+  shipDate?: string | null
   detentionClockStart?: string | null
+  // Additional BOL fields
+  carrierName?: string | null
+  driverName?: string | null
+  // Metadata
   confidence: Record<string, number>
 }
 
+export type ExtractionResult = {
+  normalized: ExtractedDocument
+  /** Raw parsed JSON from Claude — included in API response for client-side debugging */
+  raw: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// Prompt — explicit schema + BOL-specific extras
+// ---------------------------------------------------------------------------
+
 const PROMPT = `Extract all available fields from this freight document (BOL, rate confirmation, or invoice).
 
-Return ONLY a valid JSON object with exactly these keys. Use null for any field you cannot find:
+Return ONLY a valid JSON object. Use null for any field you cannot find.
+
+Required keys (always include these, null if absent):
 {
   "shipper": { "name": null, "address": null, "city": null, "state": null, "zip": null },
   "consignee": { "name": null, "address": null, "city": null, "state": null, "zip": null },
@@ -46,19 +69,25 @@ Return ONLY a valid JSON object with exactly these keys. Use null for any field 
   "confidence": { "shipper": 0.0, "consignee": 0.0, "pickup": 0.0, "delivery": 0.0, "commodity": 0.0, "weight": 0.0, "bolNumber": 0.0, "rate": 0.0 }
 }
 
+Also include these BOL-specific fields at the root level if present in the document:
+  "carrierName": the trucking carrier / motor carrier company name
+  "driverName": the driver's name or operator
+  "shipDate": the ship date or scheduled pickup date
+  "grossWeight": total gross weight if explicitly labeled separately from item weight
+
 Rules:
-- appointmentStart and detentionClockStart: ISO 8601 (YYYY-MM-DDTHH:MM:SS) or null
-- weight: number only, no units in the value field
+- appointmentStart, detentionClockStart, shipDate: ISO 8601 date/time (YYYY-MM-DDTHH:MM:SS) or date only (YYYY-MM-DD) — never a formatted string like "July 5"
+- weight and grossWeight: number only, no units
 - rate: number only, no dollar sign
 - rateType: one of FLAT_RATE, PER_MILE, PER_TON, PER_UNIT, PER_PALLET, PER_CWT, PER_CASE, PER_GALLON, CUSTOM_FORMULA, or null
-- confidence: 0.0–1.0 per field group indicating extraction certainty
-- pickup and shipper may refer to the same entity on a BOL — populate both if so
-- delivery and consignee may refer to the same entity — populate both if so
+- On a BOL, shipper = origin party (the "From"), consignee = destination party (the "To")
+- pickup and shipper often refer to the same entity — populate both
+- delivery and consignee often refer to the same entity — populate both
 - Return ONLY the JSON object, no markdown fences, no explanation`
 
 // ---------------------------------------------------------------------------
-// Normalizer — maps any Claude output shape to ExtractedDocument
-// Handles: nested camelCase (expected), flat snake_case, flat camelCase
+// Normalizer — maps any Claude output shape → ExtractedDocument
+// Handles: nested camelCase, flat snake_case, flat camelCase, spaced keys
 // ---------------------------------------------------------------------------
 
 function pick(raw: Record<string, unknown>, ...keys: string[]): unknown {
@@ -79,16 +108,19 @@ function buildParty(
     const nested = raw[nk]
     if (nested && typeof nested === "object" && !Array.isArray(nested)) {
       const o = nested as Record<string, unknown>
-      const name = (o.name ?? o.company ?? o.facility ?? null) as string | null
-      const address = (o.address ?? o.street ?? o.street_address ?? null) as string | null
+      const name = (o.name ?? o.company ?? o.facility ?? o.organization ?? null) as string | null
+      const address = (o.address ?? o.street ?? o.street_address ?? o.addr ?? null) as string | null
       if (name || address) {
         return {
           name,
           address,
-          city: (o.city ?? null) as string | null,
-          state: (o.state ?? o.st ?? null) as string | null,
-          zip: (o.zip ?? o.zipCode ?? o.zip_code ?? o.postal ?? o.postal_code ?? null) as string | null,
-          appointmentStart: (o.appointmentStart ?? o.appointment_start ?? o.appt_start ?? null) as string | null,
+          city: (o.city ?? o.town ?? null) as string | null,
+          state: (o.state ?? o.st ?? o.province ?? null) as string | null,
+          zip: (o.zip ?? o.zipCode ?? o.zip_code ?? o.postal ?? o.postal_code ?? o.postalCode ?? null) as string | null,
+          appointmentStart: (
+            o.appointmentStart ?? o.appointment_start ?? o.appt_start ??
+            o.scheduled_date ?? o.scheduledDate ?? null
+          ) as string | null,
         }
       }
     }
@@ -98,22 +130,38 @@ function buildParty(
   for (const p of prefixes) {
     const nameVal = pick(
       raw,
-      `${p}_name`, `${p}Name`, `${p}_company`, `${p}Company`,
-      `${p}_facility`, `${p}Facility`
+      `${p}_name`, `${p}Name`,
+      `${p}_company`, `${p}Company`,
+      `${p}_facility`, `${p}Facility`,
+      `${p}_organization`, `${p}Organization`
     )
     const addrVal = pick(
       raw,
-      `${p}_address`, `${p}Address`, `${p}_street`, `${p}Street`,
-      `${p}_addr`, `${p}Addr`
+      `${p}_address`, `${p}Address`,
+      `${p}_street`, `${p}Street`,
+      `${p}_addr`, `${p}Addr`,
+      `${p}_street_address`, `${p}StreetAddress`
     )
     if (nameVal || addrVal) {
       return {
         name: (nameVal ?? null) as string | null,
         address: (addrVal ?? null) as string | null,
-        city: pick(raw, `${p}_city`, `${p}City`) as string | null,
-        state: pick(raw, `${p}_state`, `${p}State`) as string | null,
-        zip: pick(raw, `${p}_zip`, `${p}Zip`, `${p}_zipcode`, `${p}Zipcode`, `${p}_zip_code`) as string | null,
-        appointmentStart: pick(raw, `${p}_appointment`, `${p}Appointment`, `${p}_appt`, `${p}Appt`) as string | null,
+        city: pick(raw, `${p}_city`, `${p}City`, `${p}_town`, `${p}Town`) as string | null,
+        state: pick(raw, `${p}_state`, `${p}State`, `${p}_st`, `${p}St`) as string | null,
+        zip: pick(
+          raw,
+          `${p}_zip`, `${p}Zip`,
+          `${p}_zipcode`, `${p}Zipcode`,
+          `${p}_zip_code`, `${p}ZipCode`,
+          `${p}_postal`, `${p}Postal`
+        ) as string | null,
+        appointmentStart: pick(
+          raw,
+          `${p}_appointment`, `${p}Appointment`,
+          `${p}_appt`, `${p}Appt`,
+          `${p}_date`, `${p}Date`,
+          `${p}_scheduled`, `${p}Scheduled`
+        ) as string | null,
       }
     }
   }
@@ -129,89 +177,125 @@ function toNum(v: unknown): number | null {
 }
 
 function normalizeExtracted(raw: Record<string, unknown>): ExtractedDocument {
-  const shipper = buildParty(
-    raw,
-    ["shipper"],
-    ["shipper", "ship_from", "origin", "from"]
+  const shipper = buildParty(raw,
+    ["shipper", "from", "origin"],
+    ["shipper", "ship_from", "origin", "from", "sender"]
   )
-  const consignee = buildParty(
-    raw,
-    ["consignee", "receiver", "recipient"],
+  const consignee = buildParty(raw,
+    ["consignee", "receiver", "recipient", "to", "destination"],
     ["consignee", "receiver", "recipient", "ship_to", "destination", "to"]
   )
-  const pickup = buildParty(
-    raw,
-    ["pickup", "origin", "ship_from"],
-    ["pickup", "origin", "ship_from", "from", "shipper"]
+  const pickup = buildParty(raw,
+    ["pickup", "pick_up", "origin", "ship_from", "loading"],
+    ["pickup", "pick_up", "origin", "ship_from", "from", "loading"]
   )
-  const delivery = buildParty(
-    raw,
-    ["delivery", "destination", "ship_to"],
-    ["delivery", "destination", "ship_to", "to", "consignee"]
+  const delivery = buildParty(raw,
+    ["delivery", "destination", "ship_to", "unloading", "drop_off", "dropoff"],
+    ["delivery", "destination", "ship_to", "to", "unloading", "drop_off"]
   )
+
+  // Carrier party (BOL-specific — not a form party, but extract for carrierName)
+  const carrierNested = raw["carrier"]
+  const carrierNameFromNested = (
+    carrierNested && typeof carrierNested === "object" && !Array.isArray(carrierNested)
+      ? ((carrierNested as Record<string, unknown>).name ?? null)
+      : null
+  ) as string | null
+
+  // shipDate — Claude might return it at root or nested in pickup
+  const rawShipDate = pick(
+    raw,
+    "shipDate", "ship_date", "date", "shipment_date", "shipmentDate",
+    "pickup_date", "pickupDate", "scheduled_date", "scheduledDate",
+    "load_date", "loadDate", "Ship Date", "Date"
+  ) as string | null
 
   return {
     shipper,
     consignee,
-    // If Claude returned no explicit pickup/delivery, fall back to shipper/consignee
     pickup:   pickup   ?? shipper,
     delivery: delivery ?? consignee,
-    bolNumber: pick(
-      raw,
+
+    bolNumber: pick(raw,
       "bolNumber", "bol_number", "bolNo", "bol_no", "bol",
       "bill_of_lading_number", "billOfLadingNumber", "bill_of_lading",
-      "BOL", "BOL Number", "bol number"
+      "BOL", "BOL Number", "BOL #", "bol number", "b/l_number", "blNumber"
     ) as string | null,
-    poNumber: pick(
-      raw,
+
+    poNumber: pick(raw,
       "poNumber", "po_number", "poNo", "po_no", "po",
       "purchase_order_number", "purchaseOrderNumber", "purchase_order",
-      "PO Number", "po number"
+      "PO Number", "PO #", "po number"
     ) as string | null,
-    rateConfNumber: pick(
-      raw,
+
+    rateConfNumber: pick(raw,
       "rateConfNumber", "rate_conf_number", "rateConfNo", "rate_confirmation_number",
       "rate_conf", "rateConf", "pro_number", "proNumber", "ref_number", "refNumber",
-      "Rate Conf #", "rate conf number"
+      "Rate Conf #", "rate conf number", "confirmation_number", "confirmationNumber"
     ) as string | null,
-    commodity: pick(
-      raw,
+
+    commodity: pick(raw,
       "commodity", "description", "freight_description", "freightDescription",
-      "cargo", "item", "items", "goods", "product", "Commodity"
+      "cargo", "item", "items", "goods", "product", "products",
+      "Commodity", "Description", "Freight Description"
     ) as string | null,
-    weight: toNum(pick(
-      raw,
-      "weight", "total_weight", "totalWeight", "gross_weight", "grossWeight",
+
+    weight: toNum(pick(raw,
+      "weight", "total_weight", "totalWeight",
+      "net_weight", "netWeight",
       "Weight", "Total Weight"
     )),
-    weightUnit: (pick(raw, "weightUnit", "weight_unit", "Weight Unit") as string | null) ?? "lbs",
-    rate: toNum(pick(
-      raw,
-      "rate", "agreed_rate", "agreedRate", "total_rate", "totalRate",
-      "linehaul_rate", "linehaulRate", "base_rate", "baseRate",
-      "Rate", "Total Rate", "Line Haul"
+
+    grossWeight: toNum(pick(raw,
+      "grossWeight", "gross_weight",
+      "Gross Weight", "GrossWeight",
+      // also try root "weight" if gross_weight is absent
+      "weight", "total_weight", "totalWeight"
     )),
-    rateType: pick(
-      raw,
-      "rateType", "rate_type", "Rate Type"
+
+    weightUnit: (pick(raw, "weightUnit", "weight_unit", "Weight Unit") as string | null) ?? "lbs",
+
+    rate: toNum(pick(raw,
+      "rate", "agreed_rate", "agreedRate",
+      "total_rate", "totalRate", "linehaul_rate", "linehaulRate",
+      "base_rate", "baseRate", "freight_charge", "freightCharge",
+      "Rate", "Total Rate", "Line Haul", "Freight Charge"
+    )),
+
+    rateType: pick(raw, "rateType", "rate_type", "Rate Type") as string | null,
+
+    shipDate: rawShipDate,
+
+    detentionClockStart: pick(raw,
+      "detentionClockStart", "detention_clock_start",
+      "detentionStart", "detention_start",
+      "Detention Clock Start"
     ) as string | null,
-    detentionClockStart: pick(
-      raw,
-      "detentionClockStart", "detention_clock_start", "detentionStart",
-      "detention_start", "Detention Clock Start"
+
+    carrierName: (
+      pick(raw,
+        "carrierName", "carrier_name", "carrier",
+        "Carrier", "Carrier Name", "motor_carrier", "motorCarrier"
+      ) as string | null
+    ) ?? carrierNameFromNested,
+
+    driverName: pick(raw,
+      "driverName", "driver_name", "driver",
+      "Driver", "Driver Name", "operator", "truck_driver", "truckDriver"
     ) as string | null,
+
     confidence: (pick(raw, "confidence") ?? {}) as Record<string, number>,
   }
 }
 
 // ---------------------------------------------------------------------------
-// Main extraction function
+// Main extraction function — returns both raw and normalized
 // ---------------------------------------------------------------------------
 
 export async function extractDocumentFields(
   buffer: Buffer,
   mimeType: string
-): Promise<ExtractedDocument> {
+): Promise<ExtractionResult> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const base64 = buffer.toString("base64")
 
@@ -224,8 +308,6 @@ export async function extractDocumentFields(
       { type: "text", text: PROMPT },
     ]
   } else {
-    // Claude supports: image/jpeg, image/png, image/gif, image/webp
-    // HEIC must be converted before reaching here (done in the route)
     contentBlocks = [
       {
         type: "image",
@@ -257,7 +339,7 @@ export async function extractDocumentFields(
       ? response.content[0].text
       : "{}"
 
-  // Strip markdown code fences if present despite instructions
+  // Strip markdown fences if present despite instructions
   const json = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim()
 
   console.log("[extract] Raw Claude response:", text)
@@ -265,10 +347,10 @@ export async function extractDocumentFields(
   try {
     const raw = JSON.parse(json) as Record<string, unknown>
     const normalized = normalizeExtracted(raw)
-    console.log("[extract] Normalized fields:", JSON.stringify(normalized, null, 2))
-    return normalized
+    console.log("[extract] Normalized:", JSON.stringify(normalized, null, 2))
+    return { raw, normalized }
   } catch (e) {
     console.error("[extract] JSON parse failed:", e, "\nRaw response:", text)
-    return { confidence: {} }
+    return { raw: {}, normalized: { confidence: {} } }
   }
 }

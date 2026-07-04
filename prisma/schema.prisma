@@ -245,7 +245,8 @@ model User {
   accounts            Account[]
   memberships         OrganizationMembership[]
   sentInvitations     Invitation[]            @relation("InvitedBy")
-  uploadedDocuments   Document[]
+  uploadedDocuments   Document[]              @relation("UploadedBy")
+  verifiedDocuments   Document[]              @relation("VerifiedBy")
   signatures          Signature[]
   gpsEvents           GPSEvent[]
   breadcrumbs         LocationBreadcrumb[]
@@ -535,11 +536,14 @@ model Document {
   processedFileUrl   String?
   fileSize           Int?
   mimeType           String?
+  verifiedById       String?
+  verifiedAt         DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  load          Load                     @relation(fields: [loadId], references: [id], onDelete: Cascade)
-  uploadedBy    User                     @relation(fields: [uploadedById], references: [id])
+  load          Load                      @relation(fields: [loadId], references: [id], onDelete: Cascade)
+  uploadedBy    User                      @relation("UploadedBy", fields: [uploadedById], references: [id])
+  verifiedBy    User?                     @relation("VerifiedBy", fields: [verifiedById], references: [id])
   extractions   DocumentExtraction[]
   packetDocs    FactoringPacketDocument[]
 }

@@ -8,6 +8,7 @@ import { hasPermission } from "@/lib/permissions"
 import { LoadStatusBadge } from "@/components/loads/load-status-badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency, formatDate, getLoadStatusLabel } from "@/lib/utils"
+import { DocumentViewerPanel, type ViewerDocument } from "@/components/documents/document-viewer-panel"
 
 // Status transition map: which next statuses are allowed from each current status
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -72,7 +73,10 @@ export default async function LoadDetailPage({
       stops: { orderBy: { stopNumber: "asc" } },
       parties: true,
       documents: {
-        include: { uploadedBy: { select: { name: true } } },
+        include: {
+          uploadedBy: { select: { name: true } },
+          verifiedBy: { select: { name: true } },
+        },
         orderBy: { createdAt: "desc" },
       },
       gpsEvents: { orderBy: { timestamp: "asc" } },
@@ -421,60 +425,31 @@ export default async function LoadDetailPage({
         </div>
       )}
 
-      {activeTab === "documents" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Documents</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {load.documents.length === 0 ? (
-              <p className="text-sm text-gray-400 px-6 py-8 text-center">
-                No documents uploaded yet
-              </p>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {load.documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-center justify-between px-6 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {doc.documentType.replace(/_/g, " ")}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        Uploaded by {doc.uploadedBy.name} ·{" "}
-                        {formatDate(doc.createdAt, "MMM d, yyyy")}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          doc.verificationStatus === "VERIFIED"
-                            ? "bg-green-100 text-green-700"
-                            : doc.verificationStatus === "DISPUTED"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {doc.verificationStatus}
-                      </span>
-                      <a
-                        href={doc.originalFileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-[#1E3A5F] hover:underline"
-                      >
-                        View →
-                      </a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {activeTab === "documents" && (() => {
+        const viewerDocs: ViewerDocument[] = load.documents.map((doc) => ({
+          id: doc.id,
+          documentType: doc.documentType,
+          originalFileUrl: doc.originalFileUrl,
+          mimeType: doc.mimeType ?? null,
+          verificationStatus: doc.verificationStatus,
+          verifiedAt: doc.verifiedAt?.toISOString() ?? null,
+          verifiedByName: doc.verifiedBy?.name ?? null,
+          uploadedByName: doc.uploadedBy.name ?? "Unknown",
+          createdAt: doc.createdAt.toISOString(),
+          extractedFields: (doc.extractedFields ?? null) as ViewerDocument["extractedFields"],
+        }))
+        const canVerify = hasPermission(role, "edit_load")
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle>Documents</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <DocumentViewerPanel documents={viewerDocs} canVerify={canVerify} />
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       {activeTab === "gps" && (
         <Card>

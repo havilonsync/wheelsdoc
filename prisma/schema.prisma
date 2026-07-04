@@ -532,7 +532,7 @@ model Document {
   verificationStatus VerificationStatus @default(UNVERIFIED)
   notes              String?            @db.Text
   fileHash           String?
-  originalFileUrl    String
+  originalFileUrl    String?
   processedFileUrl   String?
   fileSize           Int?
   mimeType           String?

@@ -42,7 +42,7 @@ type ExtractedFields = {
 export type ViewerDocument = {
   id: string
   documentType: string
-  originalFileUrl: string
+  originalFileUrl: string | null
   mimeType: string | null
   verificationStatus: string
   verifiedAt: string | null
@@ -107,8 +107,9 @@ export function DocumentViewerPanel({ documents, canVerify }: DocumentViewerPane
     )
   }
 
-  const isImage = selected?.mimeType?.startsWith("image/") ?? false
-  const isPdf = selected?.mimeType === "application/pdf"
+  const hasUrl = !!selected?.originalFileUrl
+  const isImage = hasUrl && (selected?.mimeType?.startsWith("image/") ?? false)
+  const isPdf = hasUrl && selected?.mimeType === "application/pdf"
 
   return (
     <div className="flex divide-x divide-gray-100" style={{ minHeight: 520 }}>
@@ -154,14 +155,14 @@ export function DocumentViewerPanel({ documents, canVerify }: DocumentViewerPane
             {isImage && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={selected.originalFileUrl}
+                src={selected.originalFileUrl!}
                 alt="Document"
                 className="max-h-full max-w-full object-contain"
               />
             )}
             {isPdf && (
               <iframe
-                src={selected.originalFileUrl}
+                src={selected.originalFileUrl!}
                 className="w-full border-0"
                 style={{ height: 300 }}
                 title="Document viewer"
@@ -170,18 +171,29 @@ export function DocumentViewerPanel({ documents, canVerify }: DocumentViewerPane
             {!isImage && !isPdf && (
               <div className="text-center p-8">
                 <FileText className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No preview available</p>
+                {hasUrl ? (
+                  <p className="text-sm text-gray-400">Preview not available for this file type</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-500 font-medium">File not stored</p>
+                    <p className="text-xs text-gray-400 mt-1 max-w-xs">
+                      Set a valid <code className="font-mono bg-gray-100 px-1 rounded">BLOB_READ_WRITE_TOKEN</code> in Vercel environment variables to enable file storage
+                    </p>
+                  </>
+                )}
               </div>
             )}
-            <a
-              href={selected.originalFileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="absolute top-2 right-2 flex items-center gap-1 text-xs bg-white/90 text-gray-600 hover:text-[#1E3A5F] border border-gray-200 rounded px-2 py-1 shadow-sm"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Open full
-            </a>
+            {hasUrl && (
+              <a
+                href={selected.originalFileUrl!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute top-2 right-2 flex items-center gap-1 text-xs bg-white/90 text-gray-600 hover:text-[#1E3A5F] border border-gray-200 rounded px-2 py-1 shadow-sm"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open full
+              </a>
+            )}
           </div>
 
           {/* Bottom: extracted fields + verification */}

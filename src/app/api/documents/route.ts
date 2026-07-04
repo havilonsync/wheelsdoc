@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
     confidence,
   } = body
 
-  if (!loadId || !fileUrl) {
-    return NextResponse.json({ error: "loadId and fileUrl are required" }, { status: 400 })
+  if (!loadId) {
+    return NextResponse.json({ error: "loadId is required" }, { status: 400 })
   }
 
   // Verify the load belongs to the user's org
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         loadId,
         documentType: documentType as DocumentType,
         uploadedById: session.user.id,
-        originalFileUrl: fileUrl,
+        originalFileUrl: fileUrl ?? null,
         fileSize: fileSize ?? null,
         mimeType: mimeType ?? null,
         fileHash: fileHash ?? null,

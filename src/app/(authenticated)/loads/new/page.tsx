@@ -213,14 +213,14 @@ export default function NewLoadPage() {
 
       const loadId: string = loadJson.load.id
 
-      // Attach the uploaded document to the new load if storage succeeded
-      if (pendingDoc?.fileUrl) {
+      // Attach the uploaded document to the new load (save extraction data even if storage failed)
+      if (pendingDoc) {
         await fetch("/api/documents", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             loadId,
-            fileUrl: pendingDoc.fileUrl,
+            fileUrl: pendingDoc.fileUrl ?? null,
             fileSize: pendingDoc.fileSize,
             mimeType: pendingDoc.mimeType,
             fileHash: pendingDoc.fileHash,
